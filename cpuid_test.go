@@ -70,11 +70,11 @@ func TestExample(t *testing.T) {
 func TestDumpCPUID(t *testing.T) {
 	n := int(maxFunctionID())
 	for i := 0; i <= n; i++ {
-		a, b, c, d := cpuidex(uint32(i), 0)
+		a, b, c, d := Cpuidex(uint32(i), 0)
 		t.Logf("CPUID %08x: %08x-%08x-%08x-%08x", i, a, b, c, d)
 		ex := uint32(1)
 		for {
-			a2, b2, c2, d2 := cpuidex(uint32(i), ex)
+			a2, b2, c2, d2 := Cpuidex(uint32(i), ex)
 			if a2 == a && b2 == b && d2 == d || ex > 50 || a2 == 0 {
 				break
 			}
@@ -85,7 +85,7 @@ func TestDumpCPUID(t *testing.T) {
 	}
 	n2 := maxExtendedFunction()
 	for i := uint32(0x80000000); i <= n2; i++ {
-		a, b, c, d := cpuid(i)
+		a, b, c, d := Cpuid(i)
 		t.Logf("CPUID %08x: %08x-%08x-%08x-%08x", i, a, b, c, d)
 	}
 }

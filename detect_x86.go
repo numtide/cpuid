@@ -12,11 +12,11 @@ func asmRdtscpAsm() (eax, ebx, ecx, edx uint32)
 func asmDarwinHasAVX512() bool
 
 func initCPU() {
-	cpuid = asmCpuid
-	cpuidex = asmCpuidex
-	xgetbv = asmXgetbv
-	rdtscpAsm = asmRdtscpAsm
-	darwinHasAVX512 = asmDarwinHasAVX512
+	Cpuid = asmCpuid
+	Cpuidex = asmCpuidex
+	Xgetbv = asmXgetbv
+	RdtscpAsm = asmRdtscpAsm
+	DarwinHasAVX512 = asmDarwinHasAVX512
 }
 
 func addInfo(c *CPUInfo, safe bool) {

@@ -322,11 +322,11 @@ type CPUInfo struct {
 	maxExFunc        uint32
 }
 
-var cpuid func(op uint32) (eax, ebx, ecx, edx uint32)
-var cpuidex func(op, op2 uint32) (eax, ebx, ecx, edx uint32)
-var xgetbv func(index uint32) (eax, edx uint32)
-var rdtscpAsm func() (eax, ebx, ecx, edx uint32)
-var darwinHasAVX512 = func() bool { return false }
+var Cpuid func(op uint32) (eax, ebx, ecx, edx uint32)
+var Cpuidex func(op, op2 uint32) (eax, ebx, ecx, edx uint32)
+var Xgetbv func(index uint32) (eax, edx uint32)
+var RdtscpAsm func() (eax, ebx, ecx, edx uint32)
+var DarwinHasAVX512 = func() bool { return false }
 
 // CPU contains information about the CPU as detected on startup,
 // or when Detect last was called.
@@ -506,7 +506,7 @@ func (c CPUInfo) RTCounter() uint64 {
 	if !c.Has(RDTSCP) {
 		return 0
 	}
-	a, _, _, d := rdtscpAsm()
+	a, _, _, d := RdtscpAsm()
 	return uint64(a) | (uint64(d) << 32)
 }
 
@@ -518,7 +518,7 @@ func (c CPUInfo) Ia32TscAux() uint32 {
 	if !c.Has(RDTSCP) {
 		return 0
 	}
-	_, _, ecx, _ := rdtscpAsm()
+	_, _, ecx, _ := RdtscpAsm()
 	return ecx
 }
 
@@ -539,7 +539,7 @@ func (c CPUInfo) LogicalCPU() int {
 	if c.maxFunc < 1 {
 		return -1
 	}
-	_, ebx, _, _ := cpuid(1)
+	_, ebx, _, _ := Cpuid(1)
 	return int(ebx >> 24)
 }
 
@@ -549,13 +549,13 @@ func (c *CPUInfo) frequencies() {
 	c.Hz, c.BoostFreq = 0, 0
 	mfi := maxFunctionID()
 	if mfi >= 0x15 {
-		eax, ebx, ecx, _ := cpuid(0x15)
+		eax, ebx, ecx, _ := Cpuid(0x15)
 		if eax != 0 && ebx != 0 && ecx != 0 {
 			c.Hz = (int64(ecx) * int64(ebx)) / int64(eax)
 		}
 	}
 	if mfi >= 0x16 {
-		a, b, _, _ := cpuid(0x16)
+		a, b, _, _ := Cpuid(0x16)
 		// Base...
 		if a&0xffff > 0 {
 			c.Hz = int64(a&0xffff) * 1_000_000
@@ -739,12 +739,12 @@ func (s flagSet) Strings() []string {
 }
 
 func maxExtendedFunction() uint32 {
-	eax, _, _, _ := cpuid(0x80000000)
+	eax, _, _, _ := Cpuid(0x80000000)
 	return eax
 }
 
 func maxFunctionID() uint32 {
-	a, _, _, _ := cpuid(0)
+	a, _, _, _ := Cpuid(0)
 	return a
 }
 
@@ -752,10 +752,10 @@ func brandName() string {
 	if maxExtendedFunction() >= 0x80000004 {
 		v := make([]uint32, 0, 48)
 		for i := uint32(0); i < 3; i++ {
-			a, b, c, d := cpuid(0x80000002 + i)
+			a, b, c, d := Cpuid(0x80000002 + i)
 			v = append(v, a, b, c, d)
 		}
-		return strings.Trim(string(valAsString(v...)), " ")
+		return strings.Trim(string(ValAsString(v...)), " ")
 	}
 	return "unknown"
 }
@@ -772,12 +772,12 @@ func threadsPerCore() int {
 		if vend != Intel {
 			return 1
 		}
-		_, b, _, d := cpuid(1)
+		_, b, _, d := Cpuid(1)
 		if (d & (1 << 28)) != 0 {
 			// v will contain logical core count
 			v := (b >> 16) & 255
 			if v > 1 {
-				a4, _, _, _ := cpuid(4)
+				a4, _, _, _ := Cpuid(4)
 				// physical cores
 				v2 := (a4 >> 26) + 1
 				if v2 > 0 {
@@ -787,13 +787,13 @@ func threadsPerCore() int {
 		}
 		return 1
 	}
-	_, b, _, _ := cpuidex(0xb, 0)
+	_, b, _, _ := Cpuidex(0xb, 0)
 	if b&0xffff == 0 {
 		if vend == AMD {
 			// Workaround for AMD returning 0, assume 2 if >= Zen 2
 			// It will be more correct than not.
 			fam, _, _ := familyModel()
-			_, _, _, d := cpuid(1)
+			_, _, _, d := Cpuid(1)
 			if (d&(1<<28)) != 0 && fam >= 23 {
 				return 2
 			}
@@ -816,14 +816,14 @@ func logicalCores() int {
 			// CPUID.1:EBX[23:16] represents the maximum number of addressable IDs (initial APIC ID)
 			// that can be assigned to logical processors in a physical package.
 			// The value may not be the same as the number of logical processors that are present in the hardware of a physical package.
-			_, ebx, _, _ := cpuid(1)
+			_, ebx, _, _ := Cpuid(1)
 			logical := (ebx >> 16) & 0xff
 			return int(logical)
 		}
-		_, b, _, _ := cpuidex(0xb, 1)
+		_, b, _, _ := Cpuidex(0xb, 1)
 		return int(b & 0xffff)
 	case AMD, Hygon:
-		_, b, _, _ := cpuid(1)
+		_, b, _, _ := Cpuid(1)
 		return int((b >> 16) & 0xff)
 	default:
 		return 0
@@ -834,7 +834,7 @@ func familyModel() (family, model, stepping int) {
 	if maxFunctionID() < 0x1 {
 		return 0, 0, 0
 	}
-	eax, _, _, _ := cpuid(1)
+	eax, _, _, _ := Cpuid(1)
 	// If BaseFamily[3:0] is less than Fh then ExtendedFamily[7:0] is reserved and Family is equal to BaseFamily[3:0].
 	family = int((eax >> 8) & 0xf)
 	extFam := family == 0x6 // Intel is 0x6, needs extended model.
@@ -867,7 +867,7 @@ func physicalCores() int {
 
 		// The following is inaccurate on AMD EPYC 7742 64-Core Processor
 		if maxExtendedFunction() >= 0x80000008 {
-			_, _, c, _ := cpuid(0x80000008)
+			_, _, c, _ := Cpuid(0x80000008)
 			if c&0xff > 0 {
 				return int(c&0xff) + 1
 			}
@@ -899,8 +899,8 @@ var vendorMapping = map[string]Vendor{
 }
 
 func vendorID() (Vendor, string) {
-	_, b, c, d := cpuid(0)
-	v := string(valAsString(b, d, c))
+	_, b, c, d := Cpuid(0)
+	v := string(ValAsString(b, d, c))
 	vend, ok := vendorMapping[v]
 	if !ok {
 		return VendorUnknown, v
@@ -913,10 +913,10 @@ func cacheLine() int {
 		return 0
 	}
 
-	_, ebx, _, _ := cpuid(1)
+	_, ebx, _, _ := Cpuid(1)
 	cache := (ebx & 0xff00) >> 5 // cflush size
 	if cache == 0 && maxExtendedFunction() >= 0x80000006 {
-		_, _, ecx, _ := cpuid(0x80000006)
+		_, _, ecx, _ := Cpuid(0x80000006)
 		cache = ecx & 0xff // cacheline size
 	}
 	// TODO: Read from Cache and TLB Information
@@ -936,7 +936,7 @@ func (c *CPUInfo) cacheSize() {
 		}
 		c.Cache.L1I, c.Cache.L1D, c.Cache.L2, c.Cache.L3 = 0, 0, 0, 0
 		for i := uint32(0); ; i++ {
-			eax, ebx, ecx, _ := cpuidex(4, i)
+			eax, ebx, ecx, _ := Cpuidex(4, i)
 			cacheType := eax & 15
 			if cacheType == 0 {
 				break
@@ -974,14 +974,14 @@ func (c *CPUInfo) cacheSize() {
 		if maxExtendedFunction() < 0x80000005 {
 			return
 		}
-		_, _, ecx, edx := cpuid(0x80000005)
+		_, _, ecx, edx := Cpuid(0x80000005)
 		c.Cache.L1D = int(((ecx >> 24) & 0xFF) * 1024)
 		c.Cache.L1I = int(((edx >> 24) & 0xFF) * 1024)
 
 		if maxExtendedFunction() < 0x80000006 {
 			return
 		}
-		_, _, ecx, _ = cpuid(0x80000006)
+		_, _, ecx, _ = Cpuid(0x80000006)
 		c.Cache.L2 = int(((ecx >> 16) & 0xFFFF) * 1024)
 
 		// CPUID Fn8000_001D_EAX_x[N:0] Cache Properties
@@ -994,7 +994,7 @@ func (c *CPUInfo) cacheSize() {
 		nSame := 0
 		var last uint32
 		for i := uint32(0); i < math.MaxUint32; i++ {
-			eax, ebx, ecx, _ := cpuidex(0x8000001D, i)
+			eax, ebx, ecx, _ := Cpuidex(0x8000001D, i)
 
 			level := (eax >> 5) & 7
 			cacheNumSets := ecx + 1
@@ -1068,7 +1068,7 @@ func hasSGX(available, lc bool) (rval SGXSupport) {
 
 	rval.LaunchControl = lc
 
-	a, _, _, d := cpuidex(0x12, 0)
+	a, _, _, d := Cpuidex(0x12, 0)
 	rval.SGX1Supported = a&0x01 != 0
 	rval.SGX2Supported = a&0x02 != 0
 	rval.MaxEnclaveSizeNot64 = 1 << (d & 0xFF)     // pow 2
@@ -1076,7 +1076,7 @@ func hasSGX(available, lc bool) (rval SGXSupport) {
 	rval.EPCSections = make([]SGXEPCSection, 0)
 
 	for subleaf := uint32(2); subleaf < 2+8; subleaf++ {
-		eax, ebx, ecx, edx := cpuidex(0x12, subleaf)
+		eax, ebx, ecx, edx := Cpuidex(0x12, subleaf)
 		leafType := eax & 0xf
 
 		if leafType == 0 {
@@ -1110,7 +1110,7 @@ func hasAMDMemEncryption(available bool) (rval AMDMemEncryptionSupport) {
 		return
 	}
 
-	_, b, c, d := cpuidex(0x8000001f, 0)
+	_, b, c, d := Cpuidex(0x8000001f, 0)
 
 	rval.CBitPossition = b & 0x3f
 	rval.PhysAddrReduction = (b >> 6) & 0x3F
@@ -1130,7 +1130,7 @@ func support() flagSet {
 	}
 	family, model, _ := familyModel()
 
-	_, _, c, d := cpuid(1)
+	_, _, c, d := Cpuid(1)
 	fs.setIf((d&(1<<0)) != 0, X87)
 	fs.setIf((d&(1<<8)) != 0, CMPXCHG8)
 	fs.setIf((d&(1<<11)) != 0, SYSEE)
@@ -1169,7 +1169,7 @@ func support() flagSet {
 	const avxCheck = 1<<26 | 1<<27 | 1<<28
 	if c&avxCheck == avxCheck {
 		// Check for OS support
-		eax, _ := xgetbv(0)
+		eax, _ := Xgetbv(0)
 		if (eax & 0x6) == 0x6 {
 			fs.set(AVX)
 			switch vend {
@@ -1189,7 +1189,7 @@ func support() flagSet {
 
 	// Check AVX2, AVX2 requires OS support, but BMI1/2 don't.
 	if mfi >= 7 {
-		_, ebx, ecx, edx := cpuidex(7, 0)
+		_, ebx, ecx, edx := Cpuidex(7, 0)
 		if fs.inSet(AVX) && (ebx&0x00000020) != 0 {
 			fs.set(AVX2)
 		}
@@ -1239,7 +1239,7 @@ func support() flagSet {
 		fs.setIf(edx&(1<<31) != 0, SPEC_CTRL_SSBD)
 
 		// CPUID.(EAX=7, ECX=1).EAX
-		eax1, _, _, edx1 := cpuidex(7, 1)
+		eax1, _, _, edx1 := Cpuidex(7, 1)
 		fs.setIf(fs.inSet(AVX) && eax1&(1<<4) != 0, AVXVNNI)
 		fs.setIf(eax1&(1<<7) != 0, CMPCCXADD)
 		fs.setIf(eax1&(1<<10) != 0, MOVSB_ZL)
@@ -1260,14 +1260,14 @@ func support() flagSet {
 		// Only detect AVX-512 features if XGETBV is supported
 		if c&((1<<26)|(1<<27)) == (1<<26)|(1<<27) {
 			// Check for OS support
-			eax, _ := xgetbv(0)
+			eax, _ := Xgetbv(0)
 
 			// Verify that XCR0[7:5] = ‘111b’ (OPMASK state, upper 256-bit of ZMM0-ZMM15 and
 			// ZMM16-ZMM31 state are enabled by OS)
 			/// and that XCR0[2:1] = ‘11b’ (XMM state and YMM state are enabled by OS).
 			hasAVX512 := (eax>>5)&7 == 7 && (eax>>1)&3 == 3
 			if runtime.GOOS == "darwin" {
-				hasAVX512 = fs.inSet(AVX) && darwinHasAVX512()
+				hasAVX512 = fs.inSet(AVX) && DarwinHasAVX512()
 			}
 			if hasAVX512 {
 				fs.setIf(ebx&(1<<16) != 0, AVX512F)
@@ -1299,7 +1299,7 @@ func support() flagSet {
 		}
 
 		// CPUID.(EAX=7, ECX=2)
-		_, _, _, edx = cpuidex(7, 2)
+		_, _, _, edx = Cpuidex(7, 2)
 		fs.setIf(edx&(1<<0) != 0, PSFD)
 		fs.setIf(edx&(1<<1) != 0, IDPRED_CTRL)
 		fs.setIf(edx&(1<<2) != 0, RRSBA_CTRL)
@@ -1308,13 +1308,13 @@ func support() flagSet {
 
 		// Add keylocker features.
 		if fs.inSet(KEYLOCKER) && mfi >= 0x19 {
-			_, ebx, _, _ := cpuidex(0x19, 0)
+			_, ebx, _, _ := Cpuidex(0x19, 0)
 			fs.setIf(ebx&5 == 5, KEYLOCKERW) // Bit 0 and 2 (1+4)
 		}
 
 		// Add AVX10 features.
 		if fs.inSet(AVX10) && mfi >= 0x24 {
-			_, ebx, _, _ := cpuidex(0x24, 0)
+			_, ebx, _, _ := Cpuidex(0x24, 0)
 			fs.setIf(ebx&(1<<16) != 0, AVX10_128)
 			fs.setIf(ebx&(1<<17) != 0, AVX10_256)
 			fs.setIf(ebx&(1<<18) != 0, AVX10_512)
@@ -1336,7 +1336,7 @@ func support() flagSet {
 	// Bits 07 - 00: Used for XCR0. Bit 08: PT state. Bit 09: Used for XCR0. Bits 12 - 10: Reserved. Bit 13: HWP state. Bits 31 - 14: Reserved.
 	if mfi >= 0xd {
 		if fs.inSet(XSAVE) {
-			eax, _, _, _ := cpuidex(0xd, 1)
+			eax, _, _, _ := Cpuidex(0xd, 1)
 			fs.setIf(eax&(1<<0) != 0, XSAVEOPT)
 			fs.setIf(eax&(1<<1) != 0, XSAVEC)
 			fs.setIf(eax&(1<<2) != 0, XGETBV1)
@@ -1344,7 +1344,7 @@ func support() flagSet {
 		}
 	}
 	if maxExtendedFunction() >= 0x80000001 {
-		_, _, c, d := cpuid(0x80000001)
+		_, _, c, d := Cpuid(0x80000001)
 		if (c & (1 << 5)) != 0 {
 			fs.set(LZCNT)
 			fs.set(POPCNT)
@@ -1376,7 +1376,7 @@ func support() flagSet {
 
 	}
 	if maxExtendedFunction() >= 0x80000007 {
-		_, b, _, d := cpuid(0x80000007)
+		_, b, _, d := Cpuid(0x80000007)
 		fs.setIf((b&(1<<0)) != 0, MCAOVERFLOW)
 		fs.setIf((b&(1<<1)) != 0, SUCCOR)
 		fs.setIf((b&(1<<2)) != 0, HWA)
@@ -1384,7 +1384,7 @@ func support() flagSet {
 	}
 
 	if maxExtendedFunction() >= 0x80000008 {
-		_, b, _, _ := cpuid(0x80000008)
+		_, b, _, _ := Cpuid(0x80000008)
 		fs.setIf(b&(1<<28) != 0, PSFD)
 		fs.setIf(b&(1<<27) != 0, CPPC)
 		fs.setIf(b&(1<<24) != 0, SPEC_CTRL_SSBD)
@@ -1407,7 +1407,7 @@ func support() flagSet {
 	}
 
 	if fs.inSet(SVM) && maxExtendedFunction() >= 0x8000000A {
-		_, _, _, edx := cpuid(0x8000000A)
+		_, _, _, edx := Cpuid(0x8000000A)
 		fs.setIf((edx>>0)&1 == 1, SVMNP)
 		fs.setIf((edx>>1)&1 == 1, LBRVIRT)
 		fs.setIf((edx>>2)&1 == 1, SVML)
@@ -1421,14 +1421,14 @@ func support() flagSet {
 	}
 
 	if maxExtendedFunction() >= 0x8000001a {
-		eax, _, _, _ := cpuid(0x8000001a)
+		eax, _, _, _ := Cpuid(0x8000001a)
 		fs.setIf((eax>>0)&1 == 1, FP128)
 		fs.setIf((eax>>1)&1 == 1, MOVU)
 		fs.setIf((eax>>2)&1 == 1, FP256)
 	}
 
 	if maxExtendedFunction() >= 0x8000001b && fs.inSet(IBS) {
-		eax, _, _, _ := cpuid(0x8000001b)
+		eax, _, _, _ := Cpuid(0x8000001b)
 		fs.setIf((eax>>0)&1 == 1, IBSFFV)
 		fs.setIf((eax>>1)&1 == 1, IBSFETCHSAM)
 		fs.setIf((eax>>2)&1 == 1, IBSOPSAM)
@@ -1444,7 +1444,7 @@ func support() flagSet {
 	}
 
 	if maxExtendedFunction() >= 0x8000001f && vend == AMD {
-		a, _, _, _ := cpuid(0x8000001f)
+		a, _, _, _ := Cpuid(0x8000001f)
 		fs.setIf((a>>0)&1 == 1, SME)
 		fs.setIf((a>>1)&1 == 1, SEV)
 		fs.setIf((a>>2)&1 == 1, MSR_PAGEFLUSH)
@@ -1462,7 +1462,7 @@ func support() flagSet {
 	}
 
 	if maxExtendedFunction() >= 0x80000021 && vend == AMD {
-		a, _, _, _ := cpuid(0x80000021)
+		a, _, _, _ := Cpuid(0x80000021)
 		fs.setIf((a>>31)&1 == 1, SRSO_MSR_FIX)
 		fs.setIf((a>>30)&1 == 1, SRSO_USER_KERNEL_NO)
 		fs.setIf((a>>29)&1 == 1, SRSO_NO)
@@ -1480,14 +1480,14 @@ func support() flagSet {
 		// For Intel TDX, `ebx` is set as `0xbe3`, being 3 the part
 		// we're mostly interested about,according to:
 		// https://github.com/torvalds/linux/blob/d2f51b3516dade79269ff45eae2a7668ae711b25/arch/x86/include/asm/hyperv-tlfs.h#L169-L174
-		_, ebx, _, _ := cpuid(0x4000000C)
+		_, ebx, _, _ := Cpuid(0x4000000C)
 		fs.setIf(ebx == 0xbe3, TDX_GUEST)
 	}
 
 	if mfi >= 0x21 {
 		// Intel Trusted Domain Extensions Guests have their own cpuid leaf (0x21).
-		_, ebx, ecx, edx := cpuid(0x21)
-		identity := string(valAsString(ebx, edx, ecx))
+		_, ebx, ecx, edx := Cpuid(0x21)
+		identity := string(ValAsString(ebx, edx, ecx))
 		fs.setIf(identity == "IntelTDX    ", TDX_GUEST)
 	}
 
@@ -1496,13 +1496,13 @@ func support() flagSet {
 
 func (c *CPUInfo) supportAVX10() uint8 {
 	if c.maxFunc >= 0x24 && c.featureSet.inSet(AVX10) {
-		_, ebx, _, _ := cpuidex(0x24, 0)
+		_, ebx, _, _ := Cpuidex(0x24, 0)
 		return uint8(ebx)
 	}
 	return 0
 }
 
-func valAsString(values ...uint32) []byte {
+func ValAsString(values ...uint32) []byte {
 	r := make([]byte, 4*len(values))
 	for i, v := range values {
 		dst := r[i*4:]

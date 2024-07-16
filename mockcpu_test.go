@@ -91,13 +91,13 @@ func mockCPU(def []byte) func() {
 
 	restorer := func(f idfuncs) func() {
 		return func() {
-			cpuid = f.cpuid
-			cpuidex = f.cpuidex
-			xgetbv = f.xgetbv
+			Cpuid = f.cpuid
+			Cpuidex = f.cpuidex
+			Xgetbv = f.xgetbv
 		}
-	}(idfuncs{cpuid: cpuid, cpuidex: cpuidex, xgetbv: xgetbv})
+	}(idfuncs{cpuid: Cpuid, cpuidex: Cpuidex, xgetbv: Xgetbv})
 
-	cpuid = func(op uint32) (eax, ebx, ecx, edx uint32) {
+	Cpuid = func(op uint32) (eax, ebx, ecx, edx uint32) {
 		if op == 0x80000000 || op == 0 || op == 0x4000000c {
 			var ok bool
 			_, ok = fakeID[op]
@@ -117,7 +117,7 @@ func mockCPU(def []byte) func() {
 		theid := first[0]
 		return theid[0], theid[1], theid[2], theid[3]
 	}
-	cpuidex = func(op, op2 uint32) (eax, ebx, ecx, edx uint32) {
+	Cpuidex = func(op, op2 uint32) (eax, ebx, ecx, edx uint32) {
 		if op == 0x80000000 {
 			var ok bool
 			_, ok = fakeID[op]
@@ -141,7 +141,7 @@ func mockCPU(def []byte) func() {
 		theid := first[op2]
 		return theid[0], theid[1], theid[2], theid[3]
 	}
-	xgetbv = func(index uint32) (eax, edx uint32) {
+	Xgetbv = func(index uint32) (eax, edx uint32) {
 		first, ok := fakeID[1]
 		if !ok {
 			panic(fmt.Sprintf("XGETBV not supported %v", fakeID))
